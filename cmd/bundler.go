@@ -2,17 +2,17 @@ package main
 
 import (
 	"fmt"
-	"strings"
 
 	"io/ioutil"
 	"log"
 
+	"bufio"
+	"encoding/binary"
+	"hash/crc32"
+	"os"
+
 	"github.com/conejoninja/bundle"
 	"github.com/spf13/cobra"
-	"bufio"
-	"os"
-	"hash/crc32"
-	"encoding/binary"
 )
 
 var output string
@@ -20,7 +20,7 @@ var output string
 func main() {
 
 	var cmdMake = &cobra.Command{
-		Use:   "make [flags] dir1 dir2 ... dirN",
+		Use:   "make [options] dir1 dir2 ... dirN",
 		Short: "Make a new bundle from a folder",
 		Long:  "Make a new bundle from a folder",
 		Args:  cobra.MinimumNArgs(1),
@@ -41,7 +41,6 @@ func exec(cmd *cobra.Command, args []string) {
 	}
 	a, _ := b.Compress()
 	writeFile(output, a)
-	fmt.Println("Print: "+strings.Join(args, " "), "//", output)
 }
 
 func readDir(dir string, b *bundle.Bundle) {
@@ -54,12 +53,12 @@ func readDir(dir string, b *bundle.Bundle) {
 		if f.IsDir() {
 			readDir(dir+"/"+f.Name(), b)
 		} else {
-			data, err := readFile(dir+"/"+f.Name())
+			data, err := readFile(dir + "/" + f.Name())
 			if err == nil {
 				b.AddAsset(f.Name(), data)
 			}
 		}
-		fmt.Println(dir+"/"+f.Name())
+		fmt.Println(dir + "/" + f.Name())
 	}
 }
 
@@ -94,7 +93,7 @@ func writeFile(filename string, data []byte) {
 	checkSumByte := make([]byte, 4)
 	binary.BigEndian.PutUint32(checkSumByte, checkSum)
 
-	fullData := append([]byte{3,14,1,1}, checkSumByte...)
+	fullData := append([]byte{3, 14, 1, 1}, checkSumByte...)
 	fullData = append(fullData, dataLengthByte...)
 	fullData = append(fullData, data...)
 
