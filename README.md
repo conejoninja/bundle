@@ -17,8 +17,12 @@ if err != nil {
     // error handling
 }
 // access asset
-fmt.Println(b["assetName"].Data)
+data, _ := b.Asset("assetName")
+fmt.Println(data)
 ```
+
+Check the examples folder
+
 
 ## Contributing to this project:
 
