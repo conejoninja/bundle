@@ -18,6 +18,13 @@ type Asset struct {
 
 type Bundle map[string]Asset
 
+func (b Bundle) Asset(name string) ([]byte, error) {
+	if _, ok := b[name]; !ok {
+		return []byte{}, errors.New(fmt.Sprintf("asset %s does not exist", name))
+	}
+	return b[name].Data, nil
+}
+
 func (b Bundle) AddAsset(name string, data []byte) {
 	b[name] = Asset{
 		Data: data,

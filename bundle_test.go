@@ -25,6 +25,22 @@ func TestAddAsset(t *testing.T) {
 	}
 }
 
+func TestAsset(t *testing.T) {
+	t.Log("Testing AddAsset")
+	{
+		b := make(Bundle)
+		b.AddAsset(assetName, assetData)
+		data, err := b.Asset(assetName)
+		if err != nil {
+			t.Errorf("\tAsset doesn't exists: %s", err)
+		} else if !bytes.Equal(data, assetData) {
+			t.Errorf("\tExpected %v, received: %v", assetData, data)
+		} else {
+			t.Log(fineMsg)
+		}
+	}
+}
+
 func TestDeleteAsset(t *testing.T) {
 	t.Log("Testing DeleteAsset")
 	{
