@@ -21,7 +21,7 @@ data, _ := b.Asset("assetName")
 fmt.Println(data)
 ```
 
-Check the examples folder
+Check the [examples folder](https://github.com/conejoninja/bundle/tree/master/examples)
 
 
 ## Contributing to this project:
