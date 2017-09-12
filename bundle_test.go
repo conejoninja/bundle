@@ -100,7 +100,7 @@ func TestDecompress(t *testing.T) {
 func TestLoadBundle(t *testing.T) {
 	t.Log("Testing LoadBundle")
 	{
-		b, err := LoadBundle("tests/test.bundle")
+		b, err := LoadBundle("tests/test.bundle", []byte{})
 		if err != nil {
 			t.Errorf("\tLoadBundle failed, error: %s", err)
 		} else if len(b) != 3 {

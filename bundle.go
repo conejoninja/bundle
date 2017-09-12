@@ -10,6 +10,17 @@ import (
 	"fmt"
 	"hash/crc32"
 	"os"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"io"
+	"math"
+)
+
+const (
+	NONE = iota
+	COMPRESSED
+	ENCRYPTED
 )
 
 type Asset struct {
@@ -69,7 +80,7 @@ func Decompress(data []byte) (b Bundle, err error) {
 	return b, err
 }
 
-func LoadBundle(filename string) (b Bundle, err error) {
+func LoadBundle(filename string, key []byte) (b Bundle, err error) {
 	rawData, err := readFile(filename)
 
 	if err != nil {
@@ -87,11 +98,6 @@ func LoadBundle(filename string) (b Bundle, err error) {
 		return
 	}
 
-	// zipped
-	if rawData[3] != 1 {
-		err = errors.New("Not zipped")
-		return
-	}
 
 	checkSum := binary.BigEndian.Uint32(rawData[4:8])
 	dataLength := binary.BigEndian.Uint64(rawData[8:16])
@@ -105,6 +111,15 @@ func LoadBundle(filename string) (b Bundle, err error) {
 	if crc32.Checksum(data, crc32.IEEETable) != checkSum {
 		err = errors.New("Wrong checksum, file may be corrupted")
 		return
+	}
+
+	// encrypted
+	if rawData[3] == ENCRYPTED {
+		key = PadAESKey(key)
+		data, err = AES256GCMDecrypt(data[12:], key, data[:12])
+		if err != nil {
+			return
+		}
 	}
 
 	return Decompress(data)
@@ -129,4 +144,50 @@ func readFile(filename string) ([]byte, error) {
 	bufr := bufio.NewReader(file)
 	_, err = bufr.Read(fw)
 	return fw, err
+}
+
+func AES256GCMMEncrypt(plainText, key []byte) ([]byte, []byte) {
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	nonce := make([]byte, 12)
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		panic(err.Error())
+	}
+
+	aesgcm, err := cipher.NewGCM(block)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	cipheredText := aesgcm.Seal(nil, nonce, plainText, nil)
+	return cipheredText, nonce
+}
+
+func AES256GCMDecrypt(cipheredText, key, nonce []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	aesgcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	plainText, err := aesgcm.Open(nil, nonce, cipheredText, nil)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return plainText, nil
+}
+
+func PadAESKey(key []byte) []byte {
+	l := len(key)
+	mod := math.Mod(float64(l), 16)
+	return append(key, key[:16-int(mod)]...)
 }

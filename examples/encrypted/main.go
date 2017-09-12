@@ -9,7 +9,7 @@ import (
 
 func main() {
 
-	b, e := bundle.LoadBundle("./filename.bundle", []byte(""))
+	b, e := bundle.LoadBundle("./filename.bundle", []byte("12345678901234"))
 
 	if e != nil {
 		log.Fatalf("Error loading bundle: %s", e)

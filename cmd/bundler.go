@@ -16,6 +16,7 @@ import (
 )
 
 var output string
+var key string
 
 func main() {
 
@@ -27,6 +28,7 @@ func main() {
 		Run:   exec,
 	}
 	cmdMake.Flags().StringVarP(&output, "output", "o", "", "Output file name")
+	cmdMake.Flags().StringVarP(&key, "key", "k", "", "If set bundle will be encrypted")
 
 	var rootCmd = &cobra.Command{Use: "bundler"}
 	rootCmd.AddCommand(cmdMake)
@@ -40,6 +42,14 @@ func exec(cmd *cobra.Command, args []string) {
 		readDir(d, &b)
 	}
 	a, _ := b.Compress()
+
+	if key != "" {
+		keyByte := bundle.PadAESKey([]byte(key))
+		data, nonce := bundle.AES256GCMMEncrypt(a, keyByte)
+		a =append(nonce, data...)
+
+	}
+
 	writeFile(output, a)
 }
 
@@ -93,7 +103,11 @@ func writeFile(filename string, data []byte) {
 	checkSumByte := make([]byte, 4)
 	binary.BigEndian.PutUint32(checkSumByte, checkSum)
 
-	fullData := append([]byte{3, 14, 1, 1}, checkSumByte...)
+	enc := bundle.NONE
+	if key != "" {
+		enc = bundle.ENCRYPTED
+	}
+	fullData := append([]byte{3, 14, 1, byte(enc)}, checkSumByte...)
 	fullData = append(fullData, dataLengthByte...)
 	fullData = append(fullData, data...)
 
