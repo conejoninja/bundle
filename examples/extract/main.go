@@ -14,7 +14,7 @@ func main() {
 	if e != nil {
 		log.Fatalf("Error loading bundle: %s", e)
 	}
-	for k := range b {
+	for k := range b.Assets {
 		data, err := b.Asset(k)
 		if err == nil {
 			err = ioutil.WriteFile(k, data, 0644)

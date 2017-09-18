@@ -11,12 +11,24 @@ import (
 	"hash/crc32"
 	"os"
 
+	"path/filepath"
+
 	"github.com/conejoninja/bundle"
 	"github.com/spf13/cobra"
+	"strings"
 )
 
 var output string
 var key string
+var development bool
+var bpath string
+
+type asset struct {
+	name string
+	data []byte
+	path string
+}
+var basepath string
 
 func main() {
 
@@ -28,7 +40,15 @@ func main() {
 		Run:   exec,
 	}
 	cmdMake.Flags().StringVarP(&output, "output", "o", "", "Output file name")
-	cmdMake.Flags().StringVarP(&key, "key", "k", "", "If set bundle will be encrypted")
+	cmdMake.Flags().StringVarP(&key, "key", "k", "", "If set, bundle will be encrypted")
+	cmdMake.Flags().BoolVarP(&development, "dev", "d", false, "Files will not be included in the bundle, but will be loaded from the disk")
+	cmdMake.Flags().StringVarP(&bpath, "basepath", "b", "", "When in dev mode, real path will be replaced by this")
+
+	cwd, err := os.Getwd()
+	if err != nil && development {
+		log.Fatal("Can not determine current directory")
+	}
+	basepath = cwd
 
 	var rootCmd = &cobra.Command{Use: "bundler"}
 	rootCmd.AddCommand(cmdMake)
@@ -37,23 +57,69 @@ func main() {
 
 func exec(cmd *cobra.Command, args []string) {
 
-	b := make(bundle.Bundle)
+	assets := make(map[string]asset)
 	for _, d := range args {
-		readDir(d, &b)
+		if !filepath.IsAbs(d) {
+			d = filepath.Join(basepath, d)
+		}
+		tmp := readDir(d)
+		for k, v := range tmp {
+			if development && bpath != "" {
+				v.path = strings.Replace(v.path, d, bpath, 1)
+			}
+			assets[k] = v
+		}
+
 	}
-	a, _ := b.Compress()
+
+	var b bundle.Bundle
+	b.Assets = make(map[string]bundle.Asset)
+	if development {
+		for _, v := range assets {
+			b.AddAsset(v.name, []byte(v.path))
+		}
+		flat, _ := b.Flat()
+		writeFile(output, flat)
+		return
+	}
+
+	for _, v := range assets {
+		b.AddAsset(v.name, v.data)
+	}
+
+	enc := bundle.NONE
+	if key != "" {
+		enc = bundle.ENCRYPTED
+	}
+	if development {
+		enc = bundle.DEVELOPMENT
+	}
+	b.Info = byte(enc)
+	b.Version = 1
+
+	flat, _ := b.Flat()
+
+	var a []byte
+	if enc == bundle.ENCRYPTED || enc == bundle.COMPRESSED {
+		a = bundle.Compress(flat)
+	} else {
+		a = flat
+	}
 
 	if key != "" {
 		keyByte := bundle.PadAESKey([]byte(key))
-		data, nonce := bundle.AES256GCMMEncrypt(a, keyByte)
-		a =append(nonce, data...)
+		data, nonce := bundle.AES256GCMEncrypt(a, keyByte)
+		a = append(nonce, data...)
 
 	}
 
 	writeFile(output, a)
 }
 
-func readDir(dir string, b *bundle.Bundle) {
+func readDir(dir string) map[string]asset {
+
+	assets := make(map[string]asset)
+
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		log.Fatal(err)
@@ -61,15 +127,22 @@ func readDir(dir string, b *bundle.Bundle) {
 
 	for _, f := range files {
 		if f.IsDir() {
-			readDir(dir+"/"+f.Name(), b)
+			tmp := readDir(filepath.Join(dir, f.Name()))
+			for k, v := range tmp {
+				assets[k] = v
+			}
 		} else {
-			data, err := readFile(dir + "/" + f.Name())
+			data, err := readFile(filepath.Join(dir, f.Name()))
 			if err == nil {
-				b.AddAsset(f.Name(), data)
+				assets[f.Name()] = asset{
+					name: f.Name(),
+					data: data,
+					path: filepath.Join(dir, f.Name()),
+				}
 			}
 		}
-		fmt.Println(dir + "/" + f.Name())
 	}
+	return assets
 }
 
 func readFile(filename string) ([]byte, error) {
@@ -107,7 +180,12 @@ func writeFile(filename string, data []byte) {
 	if key != "" {
 		enc = bundle.ENCRYPTED
 	}
-	fullData := append([]byte{3, 14, 1, byte(enc)}, checkSumByte...)
+	if development {
+		enc = bundle.DEVELOPMENT
+	}
+
+	fullData := []byte{3, 14, 1, byte(enc)}
+	fullData = append(fullData, checkSumByte...)
 	fullData = append(fullData, dataLengthByte...)
 	fullData = append(fullData, data...)
 

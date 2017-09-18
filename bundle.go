@@ -15,69 +15,85 @@ import (
 	"crypto/rand"
 	"io"
 	"math"
+	"io/ioutil"
 )
 
 const (
 	NONE = iota
 	COMPRESSED
 	ENCRYPTED
+	DEVELOPMENT
 )
 
 type Asset struct {
 	Data []byte
 }
 
-type Bundle map[string]Asset
+type Bundle struct {
+	Version byte
+	Info byte
+	Assets map[string]Asset
+}
 
 func (b Bundle) Asset(name string) ([]byte, error) {
-	if _, ok := b[name]; !ok {
+	if _, ok := b.Assets[name]; !ok {
 		return []byte{}, errors.New(fmt.Sprintf("asset %s does not exist", name))
 	}
-	return b[name].Data, nil
+	if b.Info == DEVELOPMENT {
+		return readFile(string(b.Assets[name].Data))
+	}
+	return b.Assets[name].Data, nil
 }
 
 func (b Bundle) AddAsset(name string, data []byte) {
-	b[name] = Asset{
+	b.Assets[name] = Asset{
 		Data: data,
 	}
 }
 
 func (b Bundle) DeleteAsset(name string) error {
-	if _, ok := b[name]; !ok {
+	if _, ok := b.Assets[name]; !ok {
 		return errors.New(fmt.Sprintf("asset %s does not exist", name))
 	}
-	delete(b, name)
+	delete(b.Assets, name)
 	return nil
 }
 
-func (b Bundle) Compress() (data []byte, err error) {
+func (b Bundle) Flat() (data []byte, err error) {
 	encBuf := new(bytes.Buffer)
 	err = gob.NewEncoder(encBuf).Encode(b)
 	if err != nil {
 		return
 	}
 	data = encBuf.Bytes()
+	return
+}
 
+func Deflat(data []byte) (b Bundle, err error) {
+	decBuf := new(bytes.Buffer)
+	decBuf.Write(data)
+	err = gob.NewDecoder(decBuf).Decode(&b)
+	return
+}
+
+func Compress(data []byte) []byte {
 	var c bytes.Buffer
 	w := gzip.NewWriter(&c)
 	w.Write(data)
 	w.Close()
-	data = c.Bytes()
-	return
+	return c.Bytes()
 }
 
-func Decompress(data []byte) (b Bundle, err error) {
+func Decompress(data []byte) (d []byte, err error) {
 	encBuf := bytes.NewBuffer(data)
 	r, err := gzip.NewReader(encBuf)
 
 	if err != nil {
 		return
 	}
-	decBuf := new(bytes.Buffer)
-	decBuf.ReadFrom(r)
-	err = gob.NewDecoder(decBuf).Decode(&b)
 
-	return b, err
+	d, err = ioutil.ReadAll(r)
+	return
 }
 
 func LoadBundle(filename string, key []byte) (b Bundle, err error) {
@@ -120,9 +136,23 @@ func LoadBundle(filename string, key []byte) (b Bundle, err error) {
 		if err != nil {
 			return
 		}
+
+		data, err = Decompress(data)
+		if err != nil {
+			return
+		}
+	} else if rawData[3] == COMPRESSED {
+		data, err = Decompress(data)
+		if err != nil {
+			return
+		}
 	}
 
-	return Decompress(data)
+	b, err = Deflat(data)
+
+	b.Version = rawData[2]
+	b.Info = rawData[3]
+	return b, err
 }
 
 func readFile(filename string) ([]byte, error) {
@@ -146,7 +176,7 @@ func readFile(filename string) ([]byte, error) {
 	return fw, err
 }
 
-func AES256GCMMEncrypt(plainText, key []byte) ([]byte, []byte) {
+func AES256GCMEncrypt(plainText, key []byte) ([]byte, []byte) {
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -188,6 +218,23 @@ func AES256GCMDecrypt(cipheredText, key, nonce []byte) ([]byte, error) {
 
 func PadAESKey(key []byte) []byte {
 	l := len(key)
-	mod := math.Mod(float64(l), 16)
-	return append(key, key[:16-int(mod)]...)
+	if l == 0 {
+		return make([]byte, 16)
+	}
+	mod := int(math.Mod(float64(l), 16))
+	d := (l+16-mod)/16;
+	padded := make([]byte, d*16)
+	i := 0
+	k := 0
+	for ;i<(d*16); {
+		for j:=0;j<l;j++ {
+			i = (k*l)+j
+			if i>=(d*16) {
+				break
+			}
+			padded[i] = key[j]
+		}
+		k++
+	}
+	return padded
 }
